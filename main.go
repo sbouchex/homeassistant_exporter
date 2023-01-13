@@ -275,16 +275,14 @@ func main() {
 	if *homeAssistantTest == true {
 		taskSingle()
 	} else {
-		http.Handle(*metricsPath, promhttp.Handler())
 		prometheus.MustRegister(c)
 
-		task(*c)
-
-		s := gocron.NewScheduler(time.UTC)
-		s.Every(*homeAssistantPollingRate).Second().Do(task)
+		s := gocron.NewScheduler(time.Now().Location())
+		s.Every(homeAssistantPollingRate).Second().Do(func() { task(*c) })
 		s.StartAsync()
 
 		log.Info("Listening on " + *listeningAddress)
+		http.Handle(*metricsPath, promhttp.Handler())
 		http.ListenAndServe(*listeningAddress, nil)
 	}
 }
