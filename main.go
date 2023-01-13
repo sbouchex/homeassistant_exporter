@@ -279,9 +279,10 @@ func main() {
 		prometheus.MustRegister(c)
 
 		task(*c)
-		gocron.Every(*homeAssistantPollingRate).Second().Do(task)
 
-		<-gocron.Start()
+		s := gocron.NewScheduler()
+		s.Every(*homeAssistantPollingRate).Second().Do(task)
+		<-s.Start()
 
 		log.Info("Listening on " + *listeningAddress)
 		http.ListenAndServe(*listeningAddress, nil)
