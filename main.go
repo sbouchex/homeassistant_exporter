@@ -277,6 +277,8 @@ func main() {
 	} else {
 		prometheus.MustRegister(c)
 
+		task(*c)
+
 		s := gocron.NewScheduler(time.Now().Location())
 		s.Every(homeAssistantPollingRate).Second().Do(func() { task(*c) })
 		s.StartAsync()
