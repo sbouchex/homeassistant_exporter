@@ -7,4 +7,4 @@ FROM alpine
 WORKDIR /build
 COPY --from=builder /build/homeassistant_exporter /build/homeassistant_exporter
 CMD ["./homeassistant_exporter"]
-EXPOSE     9103
+EXPOSE 9103
