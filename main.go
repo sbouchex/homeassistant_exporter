@@ -22,7 +22,7 @@ var (
 	metricsPath              = flag.String("web.telemetry-path", "/metrics", "Path under which to expose Prometheus metrics.")
 	homeAssistantQuery       = flag.String("ha.query", "http://127.0.0.1:8123/api/states", "Home Assistant Query")
 	homeAssistantAPI         = flag.String("ha.api", "", "Home Assistant API")
-	homeAssistantPollingRate = flag.Uint64("ha.rate", 300, "Home Assistant Polling Rate")
+	homeAssistantPollingRate = flag.Int("ha.rate", 300, "Home Assistant Polling Rate")
 	homeAssistantTest        = flag.Bool("ha.test", false, "Home Assistant Test")
 	mappingfile              = flag.String("mapping.file", "mappings.json", "Mapping File")
 	verbose                  = flag.Bool("verbose", false, "Verbose mode")
@@ -161,7 +161,7 @@ func (c homeassistantCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func queryServer() []byte {
-	log.Info("Polling Home Assistant")
+	log.Debug("Polling Home Assistant")
 	haClient := http.Client{
 		Timeout: time.Second * 2, // Timeout after 2 seconds
 	}
@@ -189,6 +189,7 @@ func queryServer() []byte {
 }
 
 func task(c homeassistantCollector) {
+
 	body := queryServer()
 
 	entities := []Entity{}
@@ -277,10 +278,8 @@ func main() {
 	} else {
 		prometheus.MustRegister(c)
 
-		task(*c)
-
 		s := gocron.NewScheduler(time.Now().Location())
-		s.Every(homeAssistantPollingRate).Second().Do(func() { task(*c) })
+		s.Every(*homeAssistantPollingRate).Second().Do(func() { task(*c) })
 		s.StartAsync()
 
 		log.Info("Listening on " + *listeningAddress)
