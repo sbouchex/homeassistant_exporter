@@ -281,6 +281,8 @@ func main() {
 		task(*c)
 		gocron.Every(*homeAssistantPollingRate).Second().Do(task)
 
+		<-gocron.Start()
+
 		log.Info("Listening on " + *listeningAddress)
 		http.ListenAndServe(*listeningAddress, nil)
 	}
