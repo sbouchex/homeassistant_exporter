@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonlvhit/gocron"
+	"github.com/go-co-op/gocron"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
@@ -280,9 +280,9 @@ func main() {
 
 		task(*c)
 
-		s := gocron.NewScheduler()
+		s := gocron.NewScheduler(time.UTC)
 		s.Every(*homeAssistantPollingRate).Second().Do(task)
-		<-s.Start()
+		s.StartAsync()
 
 		log.Info("Listening on " + *listeningAddress)
 		http.ListenAndServe(*listeningAddress, nil)
