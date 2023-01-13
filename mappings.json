@@ -1,0 +1,39 @@
+{
+    "sensor.ewelink_th01_temperature": {
+        "name": "temperature_exterieur",
+        "type": "gauge"
+    },
+    "sensor.ewelink_th01_temperature_5": {
+        "name": "temperature_bureau",
+        "type": "gauge"
+    },
+    "sensor.heiman_hs3ht_efa_3_0_temperature": {
+        "name": "temperature_cave",
+        "type": "gauge"
+    },
+    "sensor.ewelink_th01_temperature_3": {
+        "name": "temperature_chambre_bathilde",
+        "type": "gauge"
+    },
+    "sensor.ewelink_th01_temperature_2": {
+        "name": "temperature_chambre_parents",
+        "type": "gauge"
+    },
+    "sensor.28_313685020000_temperature": {
+        "name": "temperature_chaudiere",
+        "type": "gauge"
+    },
+    "sensor.heiman_hs3ht_efa_3_0_temperature_3": {
+        "name": "temperature_etage",
+        "type": "gauge"
+    },
+    "sensor.heiman_hs3ht_efa_3_0_temperature_2": {
+        "name": "temperature_salon",
+        "type": "gauge"
+    },
+    "sensor.28_7d35b1040000_temperature": {
+        "name": "temperature_soussol",
+        "type": "gauge"
+    }
+
+}
