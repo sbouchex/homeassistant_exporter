@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -70,19 +71,21 @@ func metricType(e Entity, m MappingEntry) prometheus.ValueType {
 	return prometheus.GaugeValue
 }
 
-func parseValue(e Entity) float64 {
-	val, err := strconv.ParseFloat(e.State, 64)
-	if err == nil {
-		return val
+func parseValue(e Entity) (float64, error) {
+	if e.State != "unavailable" {
+		val, err := strconv.ParseFloat(e.State, 64)
+		if err == nil {
+			return val, err
+		}
+		if *verbose {
+			log.Debugf("Error parsing state=%s", e.State)
+		}
 	}
-	if *verbose {
-		log.Debugf("Error parsing state=%s", e.State)
-	}
-	return -1.0
+	return -1.0, errors.New("Unvalid value")
 }
 
 type homeassistantSample struct {
-	Id      uint32
+	Id      string
 	Name    string
 	Labels  map[string]string
 	Help    string
@@ -96,7 +99,7 @@ type homeassistantSample struct {
 }
 
 type homeassistantCollector struct {
-	samples map[uint32]*homeassistantSample
+	samples map[string]*homeassistantSample
 	mu      *sync.Mutex
 	ch      chan *homeassistantSample
 }
@@ -105,7 +108,7 @@ func newhomeassistantCollector() *homeassistantCollector {
 	c := &homeassistantCollector{
 		ch:      make(chan *homeassistantSample, 0),
 		mu:      &sync.Mutex{},
-		samples: map[uint32]*homeassistantSample{},
+		samples: map[string]*homeassistantSample{},
 	}
 	go c.processSamples()
 	return c
@@ -201,21 +204,20 @@ func task(c homeassistantCollector) {
 	for _, entity := range entities {
 		metric, found := mappings[entity.EntityId]
 		if found {
-			parseTime, err := time.Parse(time.RFC3339, entity.LastUpdated)
-			if err != nil {
-				panic(err)
-			}
-			now := time.Now()
-			lastPush.Set(float64(now.UnixNano()) / 1e9)
-			labels := prometheus.Labels{}
-			c.ch <- &homeassistantSample{
-				Id:      uint32(parseTime.Unix()),
-				Name:    metricName(entity, metric.Name),
-				Labels:  labels,
-				Help:    metricHelp(entity, metric.Name),
-				Value:   parseValue(entity),
-				Type:    metricType(entity, metric),
-				Expires: now.Add(time.Duration(300) * time.Second * 2),
+			value, err := parseValue(entity)
+			if err == nil {
+				now := time.Now()
+				lastPush.Set(float64(now.UnixNano()) / 1e9)
+				labels := prometheus.Labels{}
+				c.ch <- &homeassistantSample{
+					Id:      metric.Name,
+					Name:    metricName(entity, metric.Name),
+					Labels:  labels,
+					Help:    metricHelp(entity, metric.Name),
+					Value:   value,
+					Type:    metricType(entity, metric),
+					Expires: now.Add(time.Duration(*homeAssistantPollingRate) * time.Second * 2),
+				}
 			}
 		}
 	}
@@ -234,10 +236,15 @@ func taskSingle() {
 	for _, entity := range entities {
 		metric, found := mappings[entity.EntityId]
 		if *verbose {
-			log.Debugf("found=%b, entity=%s", found, entity.EntityId)
+			log.Infof("found=%t, entity=%s", found, entity.EntityId)
 		}
 		if found {
-			log.Infof("%s - %f", metricName(entity, metric.Name), parseValue(entity))
+			value, err := parseValue(entity)
+			if err == nil {
+				log.Infof("%s - %f", metricName(entity, metric.Name), value)
+			} else {
+				log.Warnf("Wrong value for metric %s: %s", metric.Name, entity.State)
+			}
 		}
 	}
 }
@@ -265,7 +272,7 @@ func main() {
 		if *verbose {
 			log.Debug(mappings)
 		}
-		log.Infof("Parsing Mappings file : %d entries", len(mappings))
+		log.Infof("Parsing Mappings file: %d entries", len(mappings))
 	} else {
 		log.Error(err)
 	}
