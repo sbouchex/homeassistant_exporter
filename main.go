@@ -212,7 +212,7 @@ func task(c homeassistantCollector) {
 				now := time.Now()
 				lastPush.Set(float64(now.UnixNano()) / 1e9)
 				metricType, err := metricType(entity, metric)
-				if err != nil {
+				if err == nil {
 					labels := prometheus.Labels{}
 					c.ch <- &homeassistantSample{
 						Id:      metric.Name,
