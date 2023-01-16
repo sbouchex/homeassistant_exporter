@@ -25,7 +25,7 @@ var (
 	homeAssistantAPI         = flag.String("ha.api", "", "Home Assistant API")
 	homeAssistantPollingRate = flag.Int("ha.rate", 300, "Home Assistant Polling Rate")
 	homeAssistantTest        = flag.Bool("ha.test", false, "Home Assistant Test")
-	mappingfile              = flag.String("mapping.file", "mappings.json", "Mapping File")
+	configurationfile        = flag.String("configuration.file", "configuration.json", "configuration File")
 	verbose                  = flag.Bool("verbose", false, "Verbose mode")
 	lastPush                 = prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -33,12 +33,17 @@ var (
 			Help: "Unix timestamp of the last received metrics push in seconds.",
 		},
 	)
-	mappings = map[string]MappingEntry{}
+	configuration = Configuration{}
 )
 
 type MappingEntry struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+}
+
+type Configuration struct {
+	Mappings map[string]MappingEntry `json:"mappings"`
+	Prefix   string                  `json:"prefix"`
 }
 
 type Mapping struct {
@@ -54,8 +59,7 @@ type Entity struct {
 }
 
 func metricName(m Entity, name string) string {
-	result := "homeassistant"
-	result += "_"
+	result := configuration.Prefix
 	result += fmt.Sprintf("%s", name)
 	return result
 }
@@ -205,7 +209,7 @@ func task(c homeassistantCollector) {
 	}
 
 	for _, entity := range entities {
-		metric, found := mappings[entity.EntityId]
+		metric, found := configuration.Mappings[entity.EntityId]
 		if found {
 			value, err := parseValue(entity)
 			if err == nil {
@@ -242,7 +246,7 @@ func taskSingle() {
 	}
 
 	for _, entity := range entities {
-		metric, found := mappings[entity.EntityId]
+		metric, found := configuration.Mappings[entity.EntityId]
 		if *verbose {
 			log.Infof("found=%t, entity=%s", found, entity.EntityId)
 		}
@@ -272,19 +276,19 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	mappingsFile, err := os.Open(*mappingfile)
+	configurationFile, err := os.Open(*configurationfile)
 	if err == nil {
-		log.Info("Parsing Mappings file")
-		byteValue, _ := ioutil.ReadAll(mappingsFile)
-		json.Unmarshal(byteValue, &mappings)
+		log.Info("Parsing Configuration file")
+		byteValue, _ := ioutil.ReadAll(configurationFile)
+		json.Unmarshal(byteValue, &configuration)
 		if *verbose {
-			log.Debug(mappings)
+			log.Debug(configuration)
 		}
-		log.Infof("Parsing Mappings file: %d entries", len(mappings))
+		log.Infof("Parsing Configuration file: %d entries", len(configuration.Mappings))
 	} else {
 		log.Error(err)
 	}
-	defer mappingsFile.Close()
+	defer configurationFile.Close()
 
 	c := newhomeassistantCollector()
 
