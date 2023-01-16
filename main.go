@@ -64,11 +64,14 @@ func metricHelp(m Entity, name string) string {
 	return fmt.Sprintf("homeassistant exporter: Name: '%s'", name)
 }
 
-func metricType(e Entity, m MappingEntry) prometheus.ValueType {
+func metricType(e Entity, m MappingEntry) (prometheus.ValueType, error) {
 	if m.Type == "counter" || m.Type == "derive" {
-		return prometheus.CounterValue
+		return prometheus.CounterValue, nil
 	}
-	return prometheus.GaugeValue
+	if m.Type == "gauge" {
+		return prometheus.GaugeValue, nil
+	}
+	return 0, errors.New("Unvalid metric type")
 }
 
 func parseValue(e Entity) (float64, error) {
@@ -208,15 +211,20 @@ func task(c homeassistantCollector) {
 			if err == nil {
 				now := time.Now()
 				lastPush.Set(float64(now.UnixNano()) / 1e9)
-				labels := prometheus.Labels{}
-				c.ch <- &homeassistantSample{
-					Id:      metric.Name,
-					Name:    metricName(entity, metric.Name),
-					Labels:  labels,
-					Help:    metricHelp(entity, metric.Name),
-					Value:   value,
-					Type:    metricType(entity, metric),
-					Expires: now.Add(time.Duration(*homeAssistantPollingRate) * time.Second * 2),
+				metricType, err := metricType(entity, metric)
+				if err != nil {
+					labels := prometheus.Labels{}
+					c.ch <- &homeassistantSample{
+						Id:      metric.Name,
+						Name:    metricName(entity, metric.Name),
+						Labels:  labels,
+						Help:    metricHelp(entity, metric.Name),
+						Value:   value,
+						Type:    metricType,
+						Expires: now.Add(time.Duration(*homeAssistantPollingRate) * time.Second * 2),
+					}
+				} else {
+					log.Warnf("Wrong metric type for %s: %s", metric.Name, metric.Type)
 				}
 			}
 		}
