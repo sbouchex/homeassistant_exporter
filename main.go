@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -13,28 +12,42 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron"
+	"github.com/mcuadros/go-defaults"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 var (
-	listeningAddress         = flag.String("web.listen-address", ":9103", "Address on which to expose metrics and web interface.")
-	metricsPath              = flag.String("web.telemetry-path", "/metrics", "Path under which to expose Prometheus metrics.")
-	homeAssistantQuery       = flag.String("ha.query", "http://127.0.0.1:8123/api/states", "Home Assistant Query")
-	homeAssistantAPI         = flag.String("ha.api", "", "Home Assistant API")
-	homeAssistantPollingRate = flag.Int("ha.rate", 300, "Home Assistant Polling Rate")
-	homeAssistantTest        = flag.Bool("ha.test", false, "Home Assistant Test")
-	configurationfile        = flag.String("configuration.file", "configuration.json", "configuration File")
-	verbose                  = flag.Bool("verbose", false, "Verbose mode")
-	lastPush                 = prometheus.NewGauge(
+	lastPush = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "homeassistant_last_push_timestamp_seconds",
 			Help: "Unix timestamp of the last received metrics push in seconds.",
 		},
 	)
-	configuration = Configuration{}
+	configuration = &Configuration{}
+	config        ExporterConfiguration
 )
+
+type ExporterConfig struct {
+	ListeningAddress  string `mapstructure:"listeningAddress" default:":9393"`
+	MetricsPath       string `mapstructure:"metricsPath" default:"/metrics"`
+	HomeAssistantTest bool   `mapstructure:"test" default:"false"`
+	ConfigurationFile string `mapstructure:"configurationFile"`
+	Verbose           bool   `mapstructure:"verbose" default:"false"`
+}
+
+type ExporterConfigHa struct {
+	Query       string `mapstructure:"query"`
+	ApiKey      string `mapstructure:"api"`
+	PollingRate int    `mapstructure:"pollingRate" default:"300"`
+}
+
+type ExporterConfiguration struct {
+	Config ExporterConfig   `mapstructure:"config"`
+	Ha     ExporterConfigHa `mapstructure:"ha"`
+}
 
 type MappingEntry struct {
 	Name string `json:"name"`
@@ -84,7 +97,7 @@ func parseValue(e Entity) (float64, error) {
 		if err == nil {
 			return val, err
 		}
-		if *verbose {
+		if config.Config.Verbose {
 			log.Debugf("Error parsing state=%s", e.State)
 		}
 	}
@@ -170,20 +183,20 @@ func (c homeassistantCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- lastPush.Desc()
 }
 
-func queryServer() []byte {
+func queryServer() ([]byte, error) {
 	log.Debug("Polling Home Assistant")
 	haClient := http.Client{
 		Timeout: time.Second * 2, // Timeout after 2 seconds
 	}
-	req, err := http.NewRequest(http.MethodGet, *homeAssistantQuery, nil)
+	req, err := http.NewRequest(http.MethodGet, config.Ha.Query, nil)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+*homeAssistantAPI)
+	req.Header.Set("Authorization", "Bearer "+config.Ha.ApiKey)
 
 	res, getErr := haClient.Do(req)
 	if getErr != nil {
-		log.Fatal(getErr)
+		return nil, err
 	}
 
 	if res.Body != nil {
@@ -192,18 +205,21 @@ func queryServer() []byte {
 
 	body, readErr := ioutil.ReadAll(res.Body)
 	if readErr != nil {
-		log.Fatal(readErr)
+		return nil, err
 	}
 
-	return body
+	return body, nil
 }
 
 func task(c homeassistantCollector) {
 
-	body := queryServer()
+	body, err := queryServer()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	entities := []Entity{}
-	err := json.Unmarshal(body, &entities)
+	err = json.Unmarshal(body, &entities)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -225,7 +241,7 @@ func task(c homeassistantCollector) {
 						Help:    metricHelp(entity, metric.Name),
 						Value:   value,
 						Type:    metricType,
-						Expires: now.Add(time.Duration(*homeAssistantPollingRate) * time.Second * 2),
+						Expires: now.Add(time.Duration(config.Ha.PollingRate) * time.Second * 2),
 					}
 				} else {
 					log.Warnf("Wrong metric type for %s: %s", metric.Name, metric.Type)
@@ -237,17 +253,20 @@ func task(c homeassistantCollector) {
 
 func taskSingle() {
 
-	body := queryServer()
+	body, err := queryServer()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	entities := []Entity{}
-	err := json.Unmarshal(body, &entities)
+	err = json.Unmarshal(body, &entities)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, entity := range entities {
 		metric, found := configuration.Mappings[entity.EntityId]
-		if *verbose {
+		if config.Config.Verbose {
 			log.Infof("found=%t, entity=%s", found, entity.EntityId)
 		}
 		if found {
@@ -261,48 +280,69 @@ func taskSingle() {
 	}
 }
 
-func main() {
-	flag.Parse()
+func LoadConfig(path string) (err error) {
+	viper.AddConfigPath(path)
+	viper.SetConfigName("homeassistant_exporter")
+	viper.SetConfigType("json")
 
-	if *homeAssistantQuery == "" {
-		log.Panic("Home Assistant Query not defined")
+	viper.AutomaticEnv()
+
+	err = viper.ReadInConfig()
+	if err != nil {
+		return
 	}
 
-	if *homeAssistantAPI == "" {
-		log.Panic("Home Assistant API not defined")
-	}
+	defaults.SetDefaults(&config)
+	err = viper.Unmarshal(&config)
 
-	if *verbose {
+	return
+}
+
+func startExporter() {
+
+	if config.Config.Verbose {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	configurationFile, err := os.Open(*configurationfile)
+	configurationFile, err := os.Open(config.Config.ConfigurationFile)
 	if err == nil {
 		log.Info("Parsing Configuration file")
 		byteValue, _ := ioutil.ReadAll(configurationFile)
 		json.Unmarshal(byteValue, &configuration)
-		if *verbose {
+		if config.Config.Verbose {
 			log.Debug(configuration)
 		}
 		log.Infof("Parsing Configuration file: %d entries", len(configuration.Mappings))
+		defer configurationFile.Close()
 	} else {
-		log.Error(err)
+		log.Fatalf("Failed to open configuration file: %s", config.Config.ConfigurationFile)
 	}
-	defer configurationFile.Close()
 
 	c := newhomeassistantCollector()
 
-	if *homeAssistantTest == true {
+	if config.Config.HomeAssistantTest == true {
 		taskSingle()
 	} else {
 		prometheus.MustRegister(c)
 
 		s := gocron.NewScheduler(time.Now().Location())
-		s.Every(*homeAssistantPollingRate).Second().Do(func() { task(*c) })
+		s.Every(config.Ha.PollingRate).Second().Do(func() { task(*c) })
 		s.StartAsync()
 
-		log.Info("Listening on " + *listeningAddress)
-		http.Handle(*metricsPath, promhttp.Handler())
-		http.ListenAndServe(*listeningAddress, nil)
+		log.Info("Listening on " + config.Config.ListeningAddress)
+		http.Handle(config.Config.MetricsPath, promhttp.Handler())
+		http.ListenAndServe(config.Config.ListeningAddress, nil)
 	}
+
+}
+
+func main() {
+	viper.SetEnvPrefix("HA_EXPORTER")
+
+	err := LoadConfig(".")
+	if err != nil {
+		log.Fatal("cannot load config:", err)
+	}
+
+	startExporter()
 }
