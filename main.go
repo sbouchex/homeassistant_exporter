@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -33,7 +35,7 @@ var (
 type ExporterConfig struct {
 	ListeningAddress  string `mapstructure:"listeningAddress" default:":9393"`
 	MetricsPath       string `mapstructure:"metricsPath" default:"/metrics"`
-	HomeAssistantTest bool   `mapstructure:"test" default:"false"`
+	Test              bool   `mapstructure:"test" default:"false"`
 	ConfigurationFile string `mapstructure:"configurationFile"`
 	Verbose           bool   `mapstructure:"verbose" default:"false"`
 }
@@ -292,8 +294,22 @@ func LoadConfig(path string) (err error) {
 		return
 	}
 
+	flag.Bool("test", false, "Test the exporter once")
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	pflag.Parse()
+	viper.BindPFlags(pflag.CommandLine)
+
 	defaults.SetDefaults(&config)
 	err = viper.Unmarshal(&config)
+
+	// Inject flags into the config object
+	if viper.IsSet("test") {
+		config.Config.Test = viper.GetBool("test")
+	}
+
+	if viper.IsSet("verbose") {
+		config.Config.Verbose = viper.GetBool("verbose")
+	}
 
 	return
 }
@@ -320,7 +336,7 @@ func startExporter() {
 
 	c := newhomeassistantCollector()
 
-	if config.Config.HomeAssistantTest == true {
+	if config.Config.Test == true {
 		taskSingle()
 	} else {
 		prometheus.MustRegister(c)
