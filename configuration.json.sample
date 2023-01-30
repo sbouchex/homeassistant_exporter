@@ -1,0 +1,9 @@
+{
+    "prefix": "homeassistant_",
+    "mappings": {
+        "sensor.ewelink_th01_temperature": {
+            "name": "temperature_outside",
+            "type": "gauge"
+        }
+    }
+}

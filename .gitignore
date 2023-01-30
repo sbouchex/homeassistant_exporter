@@ -1,3 +1,4 @@
 homeassistant_exporter.exe
 configuration.json
 homeassistant_exporter.json
+.vscode/launch.json

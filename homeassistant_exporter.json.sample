@@ -1,0 +1,11 @@
+{
+    "config": {
+        "ListeningAddress": ":9393",
+        "metricsPath": "/metrics",
+        "configurationFile": "configuration.json"
+    },
+    "ha": {
+        "api": "<API>",
+        "query": "http://<HA host>:8123/api/states"
+    }
+}
