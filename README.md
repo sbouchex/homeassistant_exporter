@@ -2,7 +2,7 @@
 
 # Presentation
 An exporter for [Home Assistant](https://www.home-assistant.io/). It polls metrics
-in JSON format via HTTP GET and transforms and exposes them for consumption by Prometheus.
+in JSON format via HTTP GET, transforms them and exposes them for consumption by [Prometheus](https://www.prometheus.io/).
 
 # Purpose
 Home Assistant allow prometheus export. However, the metric names and labels are fixed, cannot be filtered and if an entity is renamed, the metric is renamed in prometheus and data are lost without changing the dashboard.
