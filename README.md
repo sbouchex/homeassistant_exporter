@@ -19,7 +19,7 @@ The metric prefix can be configured as well.
         "sensor.ewelink_th01_temperature": {
         "name": "temperature_outside",
         "type": "gauge"
-}
+    }
 }
 ```
 
